@@ -1,7 +1,5 @@
-# Описание
+# Description
 Kubecheck will check all your pods for basic k8s requirements such as SecurityContexts/Probes/Requests/etc.
-
-### Sample Output
 
 #### Check Resources 
 ```
