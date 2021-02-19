@@ -3,6 +3,10 @@ package command
 import (
 	"errors"
 	"fmt"
+	"log"
+	"os"
+	"runtime"
+
 	"github.com/lanDeleih/kubecheck/app/cmd"
 	"github.com/urfave/cli"
 	"go.uber.org/zap"
@@ -10,15 +14,11 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
-	"log"
-	"os"
-	"runtime"
 )
 
-var winError = errors.New("does not support windows at this moment")
+var errWindows = errors.New("does not support windows at this moment")
 
-func NewKubeCheckCommand(VERSION string, logger *zap.SugaredLogger) cli.App {
-
+func NewKubeCheckCommand(version string, logger *zap.SugaredLogger) cli.App {
 	clientSet, err := getKubernetesClientSet()
 	if err != nil {
 		logger.Fatalf("failed to create kubernetes clientSet with kubeConfig: %s", err)
@@ -33,16 +33,15 @@ func NewKubeCheckCommand(VERSION string, logger *zap.SugaredLogger) cli.App {
 	return cli.App{
 		Name:        "kubecheck",
 		Description: "check your application for readiness to production",
-		Version:     VERSION,
+		Version:     version,
 		Commands: []cli.Command{
 			cmd.NewScanCommand(c),
 		},
-		Flags: CheckFlags(),
+		Flags: checkFlags(),
 	}
-
 }
 
-func CheckFlags() []cli.Flag {
+func checkFlags() []cli.Flag {
 	return []cli.Flag{
 		cli.StringFlag{
 			Name:  "namespace,n",
@@ -52,9 +51,8 @@ func CheckFlags() []cli.Flag {
 }
 
 func getKubeConfig() (*rest.Config, error) {
-
 	kubeConfigPath, err := getKubeConfigPath()
-	if errors.Is(err, winError) {
+	if errors.Is(err, errWindows) {
 		return nil, err
 	}
 	return clientcmd.BuildConfigFromFlags("", kubeConfigPath)
@@ -77,7 +75,7 @@ func getKubeConfigPath() (string, error) {
 	case "linux":
 		home = fmt.Sprintf("%s/.kube/config", homedir.HomeDir())
 	case "windows":
-		return "", winError
+		return "", errWindows
 	}
 
 	if os.Getenv("KUBECONFIG_PATH") != "" {

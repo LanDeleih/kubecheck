@@ -1,10 +1,11 @@
 package main
 
 import (
-	"github.com/lanDeleih/kubecheck/app/command"
-	"go.uber.org/zap"
 	"log"
 	"os"
+
+	"github.com/lanDeleih/kubecheck/app/command"
+	"go.uber.org/zap"
 )
 
 var VERSION = "dev"

@@ -3,13 +3,14 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"sync"
+
 	"github.com/urfave/cli"
 	"go.uber.org/zap"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"sync"
 )
 
 type CheckOpts struct {
@@ -18,6 +19,9 @@ type CheckOpts struct {
 	ContextNamespace string
 }
 
+const checkResourcesDelta = 3
+
+// NewScanCommand - create new instance of scan command.
 func NewScanCommand(c CheckOpts) cli.Command {
 	return cli.Command{
 		Name:   "resources",
@@ -45,7 +49,7 @@ func (o *CheckOpts) checkResources(ctx *cli.Context) {
 	namespace := o.getContextNamespace(ctx)
 	var wg sync.WaitGroup
 
-	wg.Add(3)
+	wg.Add(checkResourcesDelta)
 
 	go o.checkDeployments(namespace, ignore, &wg)
 	go o.checkDaemonSets(namespace, ignore, &wg)
@@ -60,8 +64,9 @@ func (o *CheckOpts) checkDeployments(namespace string, ignore bool, wg *sync.Wai
 		o.Logger.Errorf("Failed to get deployments in namespace: %s", err)
 		wg.Done()
 	}
-	for _, deployment := range deployments.Items {
-		checkResources(deployment.Name, "Deployment", ignore, deployment.Spec.Template.Spec)
+	for deployment := range deployments.Items {
+		checkResources(deployments.Items[deployment].Name, "Deployment",
+			ignore, &deployments.Items[deployment].Spec.Template.Spec)
 	}
 	wg.Done()
 }
@@ -72,8 +77,9 @@ func (o *CheckOpts) checkDaemonSets(namespace string, ignore bool, wg *sync.Wait
 		o.Logger.Errorf("Failed to get daemonSets in namespace: %s", err)
 		wg.Done()
 	}
-	for _, daemonSet := range daemonSets.Items {
-		checkResources(daemonSet.Name, "DaemonSet", ignore, daemonSet.Spec.Template.Spec)
+	for daemonSet := range daemonSets.Items {
+		checkResources(daemonSets.Items[daemonSet].Name, "DaemonSet", ignore,
+			&daemonSets.Items[daemonSet].Spec.Template.Spec)
 	}
 	wg.Done()
 }
@@ -84,37 +90,46 @@ func (o *CheckOpts) checkStatefulSets(namespace string, ignore bool, wg *sync.Wa
 		o.Logger.Errorf("Failed to get deployments in namespace: %s", err)
 		wg.Done()
 	}
-	for _, statefulSet := range statefulSets.Items {
-		checkResources(statefulSet.Name, "StatefulSet", ignore, statefulSet.Spec.Template.Spec)
+	for statefulSet := range statefulSets.Items {
+		checkResources(statefulSets.Items[statefulSet].Name, "StatefulSet",
+			ignore, &statefulSets.Items[statefulSet].Spec.Template.Spec)
 	}
 	wg.Done()
 }
 
-func checkResources(name, kind string, ignore bool, podSpec v1.PodSpec) {
-	for _, container := range podSpec.Containers {
-		if container.LivenessProbe == nil {
-			fmt.Printf("[WARN] %s: %s, container: %s - does not have [LivenessProbe]\n", kind, name, container.Name)
+func checkResources(name, kind string, ignore bool, podSpec *v1.PodSpec) {
+	for container := range podSpec.Containers {
+		if podSpec.Containers[container].LivenessProbe == nil {
+			fmt.Printf("[WARN] %s: %s, container: %s - does not have [LivenessProbe]\n", kind, name,
+				podSpec.Containers[container].Name)
 		}
-		if container.ReadinessProbe == nil {
-			fmt.Printf("[WARN] %s: %s, container: %s - does not have [ReadinessProbe]\n", kind, name, container.Name)
+		if podSpec.Containers[container].ReadinessProbe == nil {
+			fmt.Printf("[WARN] %s: %s, container: %s - does not have [ReadinessProbe]\n", kind, name,
+				podSpec.Containers[container].Name)
 		}
-		if container.Resources.Limits == nil {
-			fmt.Printf("[WARN] %s: %s, container: %s - does not have [Limits]\n", kind, name, container.Name)
+		if podSpec.Containers[container].Resources.Limits == nil {
+			fmt.Printf("[WARN] %s: %s, container: %s - does not have [Limits]\n", kind, name,
+				podSpec.Containers[container].Name)
 		}
-		if container.Resources.Requests == nil {
-			fmt.Printf("[WARN] %s: %s, container: %s - does not have [Requests]\n", kind, name, container.Name)
+		if podSpec.Containers[container].Resources.Requests == nil {
+			fmt.Printf("[WARN] %s: %s, container: %s - does not have [Requests]\n", kind, name,
+				podSpec.Containers[container].Name)
 		}
 		if podSpec.HostNetwork {
-			fmt.Printf("[INFO] %s: %s, container: %s - has [Host Network]\n", kind, name, container.Name)
+			fmt.Printf("[INFO] %s: %s, container: %s - has [Host Network]\n", kind, name,
+				podSpec.Containers[container].Name)
 		}
 		if podSpec.HostPID {
-			fmt.Printf("[WARN] %s: %s, container: %s - has [Host PID]\n", kind, name, container.Name)
+			fmt.Printf("[WARN] %s: %s, container: %s - has [Host PID]\n", kind, name,
+				podSpec.Containers[container].Name)
 		}
-		if container.SecurityContext != nil && !ignore {
-			checkContainerSecurityContext(name, kind, container.Name, container.SecurityContext)
+		if podSpec.Containers[container].SecurityContext != nil && !ignore {
+			checkContainerSecurityContext(name, kind, podSpec.Containers[container].Name,
+				podSpec.Containers[container].SecurityContext)
 		}
-		if container.SecurityContext == nil && !ignore {
-			fmt.Printf("[ERROR] %s: %s, container: %s - has no provided [Security Context]\n", kind, name, container.Name)
+		if podSpec.Containers[container].SecurityContext == nil && !ignore {
+			fmt.Printf("[ERROR] %s: %s, container: %s - has no provided [Security Context]\n", kind, name,
+				podSpec.Containers[container].Name)
 		}
 	}
 	if podSpec.SecurityContext != nil && !ignore {
